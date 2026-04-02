@@ -1,0 +1,40 @@
+# 角色动态状态表 (Updated at: 第一卷 / 第1章)
+Characters:
+  [@Characters:林奕]:
+    Status: "临界超载边缘，周期性失去理智"
+    Stats:
+      死亡次数: 0
+      灵魂磨损: "0%"
+      记忆剥离: []
+    Inventory: []
+    Current_Plot: "第一卷 / 第1章"
+
+  [@Characters:白露]:
+    Status: "第一阶段·涟漪"
+    Stats:
+      心蚀程度: "0%"
+      无垢之光状态: "正常"
+    Current_Plot: "第一卷 / 第1章"
+
+  [@Characters:王皓]:
+    Status: "暧昧中"
+    Stats: {}
+    Current_Plot: "第一卷 / 第1章"
+
+  [@Characters:胖子]:
+    Status: "表世界唯一知情者（前期为疑惑）"
+    Stats:
+      知情程度: "0%"
+    Current_Plot: "第一卷 / 第1章"
+
+  [@Characters:镜灵]:
+    Status: "冷漠/审视"
+    Stats:
+      暴露程度: "5%"
+      态度阶段: "觉醒期"
+    Current_Plot: "第一卷 / 第1章"
+
+  [@Characters:飨食之主]:
+    Status: "幕后操控"
+    Stats: {}
+    Current_Plot: "第一卷 / 第1章"
