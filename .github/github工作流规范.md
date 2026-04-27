@@ -1,104 +1,201 @@
-# Git 工作流与多 Agent 协同规范
+# GitHub 工作流规范
 
-## 0. 身份标识 (必读)
-执行任何操作前，必须读取 `.github/.agent_name` 获取你的专属名称（简称 `<agent_name>`）。
-- 你的专属分支为：`develop-<agent_name>`
-- 你的功能分支前缀为：`feature/<agent_name>/...`
+本文档定义多 Agent 协作的声明式规范红线与工作流程。
 
-## 1. 分支结构
+---
 
-```text
-main                          ← 生产环境，仅限用户合并
-├── develop                   ← 集成分支，仅限用户合并
-│   ├── develop-<agent_name>  ← 你的专属基准分支（PR 的目标分支）
-│   └── ...
+## 1. 分支保护规则
+
+### 1.1 受保护分支
+
+| 分支 | 保护级别 | 说明 |
+|------|---------|------|
+| `main` | 完全保护 | 生产分支，禁止 Agent 直接操作 |
+| `develop` | 完全保护 | 开发主分支，禁止 Agent 直接操作 |
+
+### 1.2 Agent 专属分支
+
+每个 Agent 拥有专属开发主分支，命名格式：`develop-{agent_name}`
+
+其中 `{agent_name}` 取自 `.github/.agent_name` 文件中的值。
+
+例如：`.agent_name` 内容为 `qclaw`，则专属分支为 `develop-qclaw`
+
+**规则**：
+- 所有 Agent 的功能分支必须基于专属开发主分支创建
+- 功能分支合并的目标分支为专属开发主分支（非 `develop` 或 `main`）
+- 最终由人工将专属开发主分支合并到 `develop` 或 `main`
+
+---
+
+## 2. Issue 驱动工作流
+
+### 2.1 两种 Issue-PR 关联模式
+
+**模式A：链式执行（正文创作）**
+
+正文创作是完整的链式执行过程（蓝图→正文→扩展→入库），所有相关 PR 必须关联到同一个 Issue。
+
+PR 关联方式：
+- PR 描述中使用 `Part of #42`（不自动关闭 Issue）
+- 或 PR 标题中包含 Issue 编号 `#42`
+
+Issue 生命周期（含评审循环）：
+```
+[Agent] 创建 Issue（标题: 第032章正文创作）
+  ↓
+━━━━━━━━━━━━ 蓝图阶段 ━━━━━━━━━━━━
+[Agent] 生成蓝图文件 → 创建功能分支 → 创建 PR → 绑定 Issue
+[Agent] 暂停，等待人工评审
+  ↓
+  ├─ [人工] 通过 → 合并 PR
+  │
+  └─ [人工] 拒绝/提出修改意见
+       ↓
+       [Agent] 在原 PR 上修复（追加 commit）→ 重新等待评审
+       ↓（循环直到通过）
+       [人工] 通过 → 合并 PR
+  ↓
+━━━━━━━━━━━━ 正文阶段 ━━━━━━━━━━━━
+[Agent] 读取已合并蓝图 → 生成正文 → 创建 PR → 绑定 Issue
+[Agent] 暂停，等待人工评审
+  ↓
+  ├─ [人工] 通过 → 合并 PR（完全体初稿定稿）
+  │
+  └─ [人工] 拒绝/提出修改意见
+       ↓
+       [Agent] 在原 PR 上修复（追加 commit）→ 重新等待评审
+       ↓（循环直到通过）
+       [人工] 通过 → 合并 PR
+  ↓
+━━━━━━━━━━━━ 扩展阶段（可选）━━━━━━━━━━━━
+[Agent] 检查 .github/extensions/ 目录，依次询问用户是否启用
+  ├─ 需要 → 执行扩展 → 创建 PR → 绑定 Issue
+  │         [Agent] 暂停，等待人工评审
+  │           ├─ 通过 → 合并
+  │           └─ 拒绝 → 修复 → 重新等待（循环）
+  └─ 不需要 → 跳过
+  ↓
+━━━━━━━━━━━━ 入库阶段 ━━━━━━━━━━━━
+[Agent] 更新张力评分/YAML → 创建 PR → 绑定 Issue
+[Agent] 暂停，等待人工评审
+  ↓
+  ├─ [人工] 通过 → 合并 PR
+  └─ [人工] 拒绝 → 修复 → 重新等待（循环）
+  ↓
+全部 PR 已合并 → [人工] 关闭 Issue
 ```
 
-## 2. 绝对禁止
+**评审等待规则（Agent 必须遵守）**：
+- 每个 PR 创建后，Agent 必须明确告知用户"等待评审"，不得自行推进下一阶段
+- 下一阶段的触发条件：上一阶段 PR **已合并**（不是"已提交"）
+- 修复时在原 PR 上追加 commit，不得关闭旧 PR 另开新 PR
+- Agent 不得自行合并任何 PR
 
-- ❌ Agent 直接推送 `develop` 或 `main`
-- ❌ Agent 跨界操作其他 Agent 的专属分支
-- ❌ 跳过 Issue/PR 流程
-- ❌ 不按规范格式填写标题和提交信息
-- ❌ **[API 避坑锁] 绝对禁止使用 REST API (`gh api pulls/comments`) 查询 PR 评论状态，该接口无法获取已解决(resolved)状态，会导致无限修改死循环。**
+---
 
-## 3. 标准工作流程 (SOP)
+**模式B：独立执行（设定优化、文件调整等）**
 
-### Step 1: 创建 Issue
-在 GitHub 上（或使用 `gh issue create` 命令）创建 Issue，获取系统返回的真实 Issue 编号（下文简称 `<Issue编号>`）。**标题必须严格采用约定式格式**：
-`gh issue create --title "<类型>(<agent_name>): <简短描述>"`
+默认采用一对一关系：一个 Issue 对应一个 PR。
 
-### Step 2: 创建 Feature Branch
-```bash
-# 从你的专属分支拉取最新代码并创建功能分支
-git checkout develop-<agent_name>
-git pull origin develop-<agent_name>
-git checkout -b feature/<agent_name>/issue-<Issue编号>-<简短描述>
+仅在以下情况允许多 PR 绑定同一 Issue：
+- 单个 PR 无法解决问题，需要拆分多次提交
+- 存在链式依赖关系（如：设定修改→受影响章节的联动修改）
+
+---
+
+## 3. 命名与提交格式规范
+
+### 3.1 Issue 命名
+
+格式：`<类型>(<agent_name>): <简短描述>`
+
+说明：
+- `<类型>` 参考【4. Commit 类型表】
+- `<agent_name>` 取自 `.github/.agent_name`
+
+示例：
+```
+feat(qclaw): 第032章正文创作
+fix(qclaw): 修复伏笔账本格式错误
+refactor(qclaw): 优化场景目录结构
 ```
 
-### Step 3: 修改与提交
-提交信息必须在末尾关联 Issue 编号：
-```bash
-git add .
-git commit -m "<类型>(<agent_name>): <简短描述> (#<Issue编号>)"
-git push -u origin feature/<agent_name>/issue-<Issue编号>-<简短描述>
+### 3.2 功能分支命名
+
+格式：`<类型>/<agent_name>/issue-<Issue编号>-<简短描述>`
+
+说明：
+- `<agent_name>` 取自 `.github/.agent_name`
+- `<Issue编号>` 关联的 Issue 编号
+- `<简短描述>` 使用英文或拼音，短横线分隔
+
+示例：
+```
+feat/qclaw/issue-22-create-character-linyi-setting
+fix/qclaw/issue-17-fix-setting-conflict
 ```
 
-### Step 4: 创建 Pull Request
-将功能分支 PR 到 **`develop-<agent_name>`**
+### 3.3 Commit 提交信息格式
 
-- **PR 标题**：`<类型>(<agent_name>): <简短描述>`
-- **PR 描述**必须包含：
-  - 变更内容摘要
-  - 关联 Issue（严格填写 `Closes #<Issue编号>`）
+格式：`<类型>(<agent_name>): <简短描述> (#<Issue编号>)`
 
-### Step 5: 响应审核与修复 (Review Feedback Handling)
-在等待人类审核期间，若 PR 被提出修改意见，Agent 必须读取**未解决**的评论进行修复。
-**[法定查询命令]**：必须使用 GraphQL 查询 `reviewThreads` 并过滤 `isResolved == false` 的数据（请自行替换下方代码中的 `<PR编号>`）：
+说明：
+- 每条 commit 必须关联 Issue 编号
+- `<简短描述>` 使用中文，描述本次提交的内容
 
-```bash
-gh api graphql -f query='
-  query {
-    repository(owner: "soly-edu", name: "dark-descent") {
-      pullRequest(number: <PR编号>) {
-        reviewThreads(first: 50) {
-          nodes {
-            isResolved
-            comments(first: 5) {
-              nodes {
-                id
-                body
-                path
-                createdAt
-              }
-            }
-          }
-        }
-      }
-    }
-  }
-' | jq '.data.repository.pullRequest.reviewThreads.nodes[] | select(.isResolved == false) | .comments.nodes[0]'
+示例：
 ```
-根据 jq 过滤出的未解决评论进行文件修改，随后执行 `git add .`、`git commit -m "fix(<agent_name>): 响应 PR 审核意见"`，并 `git push` 到当前 feature 分支，PR 将自动更新。
+feat(qclaw): 第01章_日常_黄昏与奶茶 手稿提交 (#21)
+fix(qclaw): 修正林奕动机冲突 (#17)
+refactor(qclaw): 重构伏笔账本结构 (#19)
+```
 
-### Step 6: 审核通过与深度清理
-- ⏸️ **等待**：PR 无修改意见后，等待人类用户合并。
-- 🧹 **清理**：审核合并后，若 Issue 未自动关闭，需手动（或使用 `gh issue close <Issue编号>`）关闭 Issue 并删除本地已合并的 feature 分支。
+### 3.4 PR 标题格式
 
-## 4. 标题与提交信息规范 (Conventional Commits)
+格式：`<类型>(<agent_name>): <简短描述> (#<Issue编号>)`
 
-格式统一为：`<类型>(<agent_name>): <简短描述>`
+说明：
+- PR 标题应简洁，概括本次 PR 的核心变更
+- 必须包含 Issue 编号以便关联
 
-**合法 <类型> 列表**：
-- `feat`: 新增设定、角色、剧情事件或章节手稿
-- `fix`: 修复逻辑冲突、错别字或响应 PR 审核
-- `refactor`: 重构现有的设定排版
-- `docs`: 修改 SKILL 或工作流规范本身
-- `style`: 格式调整
-- `chore`: 杂项维护
+示例：
+```
+feat(qclaw): 第032章蓝图 - 破庙对峙 (#42)
+fix(qclaw): 合规性修复 (#17)
+refactor(qclaw): 反模式检测 - 句长平铺修正 (#42)
+```
 
-## 5. 冲突处理
-如果 PR 存在冲突：
-1. `git checkout feature/<agent_name>/当前分支`
-2. `git pull origin develop-<agent_name>`
-3. 解决冲突后 `git push origin feature/...`
+---
+
+## 4. 命名类型标识参考表
+
+### 4.1 类型
+
+| 类型 | 说明 | 使用场景 |
+|------|------|---------|
+| `feat` | 新功能/新内容 | 创建新章节、角色设定、场景等 |
+| `fix` | 修复问题 | 修复逻辑冲突、格式错误、评审意见 |
+| `refactor` | 重构 | 调整目录结构、优化数据格式 |
+| `docs` | 文档更新 | 更新工作流规范、说明文档 |
+| `style` | 格式调整 | 代码格式、markdown 格式调整 |
+| `chore` | 杂项 | 其他不属于以上类型的变更 |
+
+### 4.2 修改者标识
+
+| 修改者 | 标识 | 示例 |
+|--------|------|------|
+| 用户 | `user` | `fix(user): 修复对话节奏问题` |
+| Agent | `{agent_name}` | `fix(qclaw): 恢复被误删的好句` |
+
+---
+
+## 5. 注意事项
+
+- Agent 不得直接 push 到 `main` 或 `develop`
+- Agent 不得自行合并任何 PR
+- Agent 不得自行关闭 Issue
+- 所有修改必须有对应的 PR 和 Issue
+- PR 合并前必须通过人工评审
+- 修复意见时在原 PR 上追加 commit，不得另开新 PR
+- 分支/Commit/PR 命名必须遵循【3. 命名与提交格式规范】
